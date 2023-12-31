@@ -190,13 +190,15 @@ export default defineComponent({
 			return false;
 		},
 		canAccessSourceControl(): boolean {
-			return this.canUserAccessRouteByName(VIEWS.SOURCE_CONTROL);
+			// return this.canUserAccessRouteByName(VIEWS.SOURCE_CONTROL);
+			return false;
 		},
 		canAccessAuditLogs(): boolean {
 			return this.canUserAccessRouteByName(VIEWS.AUDIT_LOGS);
 		},
 		canAccessSso(): boolean {
-			return this.canUserAccessRouteByName(VIEWS.SSO_SETTINGS);
+			// return this.canUserAccessRouteByName(VIEWS.SSO_SETTINGS);
+			return false;
 		},
 		onVersionClick() {
 			this.uiStore.openModal(ABOUT_MODAL_KEY);
