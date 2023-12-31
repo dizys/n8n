@@ -175,16 +175,19 @@ export default defineComponent({
 			return this.canUserAccessRouteByName(VIEWS.API_SETTINGS);
 		},
 		canAccessLdapSettings(): boolean {
-			return this.canUserAccessRouteByName(VIEWS.LDAP_SETTINGS);
+			// return this.canUserAccessRouteByName(VIEWS.LDAP_SETTINGS);
+			return false;
 		},
 		canAccessLogStreamingSettings(): boolean {
-			return this.canUserAccessRouteByName(VIEWS.LOG_STREAMING_SETTINGS);
+			// return this.canUserAccessRouteByName(VIEWS.LOG_STREAMING_SETTINGS);
+			return false;
 		},
 		canAccessUsageAndPlan(): boolean {
 			return this.canUserAccessRouteByName(VIEWS.USAGE);
 		},
 		canAccessExternalSecrets(): boolean {
-			return this.canUserAccessRouteByName(VIEWS.EXTERNAL_SECRETS_SETTINGS);
+			// return this.canUserAccessRouteByName(VIEWS.EXTERNAL_SECRETS_SETTINGS);
+			return false;
 		},
 		canAccessSourceControl(): boolean {
 			return this.canUserAccessRouteByName(VIEWS.SOURCE_CONTROL);
