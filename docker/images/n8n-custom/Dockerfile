@@ -36,4 +36,6 @@ RUN \
 	ln -s /usr/local/lib/node_modules/n8n/bin/n8n /usr/local/bin/n8n && \
 	mkdir .n8n
 
+ENV SHELL /bin/sh
+
 ENTRYPOINT ["tini", "--", "/docker-entrypoint.sh"]
