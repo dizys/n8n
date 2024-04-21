@@ -24,6 +24,7 @@ import {
 	sleep,
 } from 'n8n-workflow';
 
+import set from 'lodash/set';
 import type { BodyParameter, IAuthDataSanitizeKeys } from '../GenericFunctions';
 import {
 	binaryContentTypes,
@@ -48,7 +49,7 @@ export class HttpRequestV3 implements INodeType {
 		this.description = {
 			...baseDescription,
 			subtitle: '={{$parameter["method"] + ": " + $parameter["url"]}}',
-			version: [3, 4, 4.1],
+			version: [3, 4, 4.1, 4.2],
 			defaults: {
 				name: 'HTTP Request',
 				color: '#0004F5',
@@ -1255,6 +1256,7 @@ export class HttpRequestV3 implements INodeType {
 			requestInterval: number;
 		};
 
+		const sanitazedRequests: IDataObject[] = [];
 		for (let itemIndex = 0; itemIndex < items.length; itemIndex++) {
 			if (authentication === 'genericCredentialType') {
 				genericCredentialType = this.getNodeParameter('genericAuthType', 0) as string;
@@ -1525,7 +1527,10 @@ export class HttpRequestV3 implements INodeType {
 			if (sendHeaders && headerParameters) {
 				let additionalHeaders: IDataObject = {};
 				if (specifyHeaders === 'keypair') {
-					additionalHeaders = await reduceAsync(headerParameters, parametersToKeyValue);
+					additionalHeaders = await reduceAsync(
+						headerParameters.filter((header) => header.name),
+						parametersToKeyValue,
+					);
 				} else if (specifyHeaders === 'json') {
 					// body is specified using JSON
 					try {
@@ -1627,8 +1632,11 @@ export class HttpRequestV3 implements INodeType {
 						'application/json,text/html,application/xhtml+xml,application/xml,text/*;q=0.9, image/*;q=0.8, */*;q=0.7';
 				}
 			}
+
 			try {
-				this.sendMessageToUI(sanitizeUiMessage(requestOptions, authDataKeys));
+				const sanitazedRequestOptions = sanitizeUiMessage(requestOptions, authDataKeys);
+				this.sendMessageToUI(sanitazedRequestOptions);
+				sanitazedRequests.push(sanitazedRequestOptions);
 			} catch (e) {}
 
 			if (pagination && pagination.paginationMode !== 'off') {
@@ -1770,7 +1778,9 @@ export class HttpRequestV3 implements INodeType {
 					if (autoDetectResponseFormat && responseData.reason.error instanceof Buffer) {
 						responseData.reason.error = Buffer.from(responseData.reason.error as Buffer).toString();
 					}
-					throw new NodeApiError(this.getNode(), responseData as JsonObject, { itemIndex });
+					const error = new NodeApiError(this.getNode(), responseData as JsonObject, { itemIndex });
+					set(error, 'context.request', sanitazedRequests[itemIndex]);
+					throw error;
 				} else {
 					removeCircularRefs(responseData.reason as JsonObject);
 					// Return the actual reason as error
