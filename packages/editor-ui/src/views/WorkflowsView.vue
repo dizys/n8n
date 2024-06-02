@@ -6,13 +6,15 @@
 		:filters="filters"
 		:additional-filters-handler="onFilter"
 		:type-props="{ itemSize: 80 }"
-		:show-aside="allWorkflows.length > 0"
 		:shareable="isShareable"
 		:initialize="initialize"
 		:disabled="readOnlyEnv"
 		@click:add="addWorkflow"
 		@update:filters="onFiltersUpdated"
 	>
+		<template #header>
+			<ProjectTabs v-if="showProjectTabs" />
+		</template>
 		<template #add-button="{ disabled }">
 			<n8n-tooltip :disabled="!readOnlyEnv">
 				<div>
@@ -23,7 +25,7 @@
 						data-test-id="resources-list-add"
 						@click="addWorkflow"
 					>
-						{{ $locale.baseText(`workflows.add`) }}
+						{{ addWorkflowButtonText }}
 					</n8n-button>
 				</div>
 				<template #content>
@@ -65,12 +67,11 @@
 				<div class="text-center mt-s">
 					<n8n-heading tag="h2" size="xlarge" class="mb-2xs">
 						{{
-							$locale.baseText(
-								currentUser.firstName
-									? 'workflows.empty.heading'
-									: 'workflows.empty.heading.userNotSetup',
-								{ interpolate: { name: currentUser.firstName } },
-							)
+							currentUser.firstName
+								? $locale.baseText('workflows.empty.heading', {
+										interpolate: { name: currentUser.firstName },
+									})
+								: $locale.baseText('workflows.empty.heading.userNotSetup')
 						}}
 					</n8n-heading>
 					<n8n-text size="large" color="text-base">
@@ -171,18 +172,18 @@ import { mapStores } from 'pinia';
 import { useUIStore } from '@/stores/ui.store';
 import { useSettingsStore } from '@/stores/settings.store';
 import { useUsersStore } from '@/stores/users.store';
-import { useTemplatesStore } from '@/stores/templates.store';
 import { useWorkflowsStore } from '@/stores/workflows.store';
-import { useCredentialsStore } from '@/stores/credentials.store';
 import { useSourceControlStore } from '@/stores/sourceControl.store';
 import { useTagsStore } from '@/stores/tags.store';
+import { useProjectsStore } from '@/features/projects/projects.store';
+import ProjectTabs from '@/features/projects/components/ProjectTabs.vue';
+import { useTemplatesStore } from '@/stores/templates.store';
 
 type IResourcesListLayoutInstance = InstanceType<typeof ResourcesListLayout>;
 
 interface Filters {
 	search: string;
-	ownedBy: string;
-	sharedWith: string;
+	homeProject: string;
 	status: string | boolean;
 	tags: string[];
 }
@@ -201,16 +202,16 @@ const WorkflowsView = defineComponent({
 		TagsDropdown,
 		SuggestedTemplatesPage,
 		SuggestedTemplatesSection,
+		ProjectTabs,
 	},
 	data() {
 		return {
 			filters: {
 				search: '',
-				ownedBy: '',
-				sharedWith: '',
-				status: StatusFilter.ALL as string | boolean,
-				tags: [] as string[],
-			},
+				homeProject: '',
+				status: StatusFilter.ALL,
+				tags: [],
+			} as Filters,
 			sourceControlStoreUnsubscribe: () => {},
 		};
 	},
@@ -220,11 +221,10 @@ const WorkflowsView = defineComponent({
 			useUIStore,
 			useUsersStore,
 			useWorkflowsStore,
-			useCredentialsStore,
 			useSourceControlStore,
 			useTagsStore,
+			useProjectsStore,
 			useTemplatesStore,
-			useUsersStore,
 		),
 		readOnlyEnv(): boolean {
 			return this.sourceControlStore.preferences.branchReadOnly;
@@ -258,10 +258,18 @@ const WorkflowsView = defineComponent({
 			return this.uiStore.suggestedTemplates;
 		},
 		userRole() {
-			const userRole: string | undefined =
-				this.usersStore.currentUserCloudInfo?.role ??
-				this.usersStore.currentUser?.personalizationAnswers?.role;
-			return userRole;
+			const role = this.usersStore.currentUserCloudInfo?.role;
+
+			if (role) {
+				return role;
+			}
+
+			const answers = this.usersStore.currentUser?.personalizationAnswers;
+			if (answers && 'role' in answers) {
+				return answers.role;
+			}
+
+			return undefined;
 		},
 		isSalesUser() {
 			if (!this.userRole) {
@@ -269,14 +277,29 @@ const WorkflowsView = defineComponent({
 			}
 			return ['Sales', 'sales-and-marketing'].includes(this.userRole);
 		},
+		showProjectTabs() {
+			return (
+				!!this.$route.params.projectId ||
+				!!this.allWorkflows.length ||
+				this.projectsStore.myProjects.length > 1
+			);
+		},
+		addWorkflowButtonText() {
+			return this.projectsStore.currentProject
+				? this.$locale.baseText('workflows.project.add')
+				: this.$locale.baseText('workflows.add');
+		},
 	},
 	watch: {
 		'filters.tags'() {
 			this.sendFiltersTelemetry('tags');
 		},
+		'$route.params.projectId'() {
+			void this.initialize();
+		},
 	},
-	mounted() {
-		this.setFiltersFromQueryString();
+	async mounted() {
+		await this.setFiltersFromQueryString();
 
 		void this.usersStore.showPersonalizationSurvey();
 
@@ -298,7 +321,10 @@ const WorkflowsView = defineComponent({
 		},
 		addWorkflow() {
 			this.uiStore.nodeViewInitialized = false;
-			void this.$router.push({ name: VIEWS.NEW_WORKFLOW });
+			void this.$router.push({
+				name: VIEWS.NEW_WORKFLOW,
+				query: { projectId: this.$route?.params?.projectId },
+			});
 
 			this.$telemetry.track('User clicked add workflow button', {
 				source: 'Workflows list',
@@ -316,9 +342,8 @@ const WorkflowsView = defineComponent({
 		async initialize() {
 			await Promise.all([
 				this.usersStore.fetchUsers(),
-				this.workflowsStore.fetchAllWorkflows(),
+				this.workflowsStore.fetchAllWorkflows(this.$route?.params?.projectId as string | undefined),
 				this.workflowsStore.fetchActiveWorkflows(),
-				this.credentialsStore.fetchAllCredentials(),
 			]);
 		},
 		onClickTag(tagId: string, event: PointerEvent) {
@@ -367,32 +392,27 @@ const WorkflowsView = defineComponent({
 				query.tags = this.filters.tags.join(',');
 			}
 
-			if (this.filters.ownedBy) {
-				query.ownedBy = this.filters.ownedBy;
-			}
-
-			if (this.filters.sharedWith) {
-				query.sharedWith = this.filters.sharedWith;
+			if (this.filters.homeProject) {
+				query.homeProject = this.filters.homeProject;
 			}
 
 			void this.$router.replace({
 				query: Object.keys(query).length ? query : undefined,
 			});
 		},
-		isValidUserId(userId: string) {
-			return Object.keys(this.usersStore.users).includes(userId);
+		isValidProjectId(projectId: string) {
+			return this.projectsStore.projects.some((project) => project.id === projectId);
 		},
-		setFiltersFromQueryString() {
-			const { tags, status, search, ownedBy, sharedWith } = this.$route.query;
+		async setFiltersFromQueryString() {
+			const { tags, status, search, homeProject } = this.$route.query;
 
 			const filtersToApply: { [key: string]: string | string[] | boolean } = {};
 
-			if (ownedBy && typeof ownedBy === 'string' && this.isValidUserId(ownedBy)) {
-				filtersToApply.ownedBy = ownedBy;
-			}
-
-			if (sharedWith && typeof sharedWith === 'string' && this.isValidUserId(sharedWith)) {
-				filtersToApply.sharedWith = sharedWith;
+			if (homeProject && typeof homeProject === 'string') {
+				await this.projectsStore.getAllProjects();
+				if (this.isValidProjectId(homeProject)) {
+					filtersToApply.homeProject = homeProject;
+				}
 			}
 
 			if (search && typeof search === 'string') {

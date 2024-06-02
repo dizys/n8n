@@ -1,4 +1,10 @@
-import type { INodeParameterResourceLocator } from 'n8n-workflow';
+import type {
+	INodeParameterResourceLocator,
+	INodeTypeDescription,
+	NodeConnectionType,
+	TriggerPanelDefinition,
+} from 'n8n-workflow';
+import { nodeConnectionTypes } from 'n8n-workflow';
 import type { ICredentialsResponse, NewCredentialsModal } from '@/Interface';
 
 /*
@@ -39,3 +45,25 @@ export const isCredentialModalState = (value: unknown): value is NewCredentialsM
 export const isResourceMapperValue = (value: unknown): value is string | number | boolean => {
 	return ['string', 'number', 'boolean'].includes(typeof value);
 };
+
+export const isJSPlumbEndpointElement = (element: Node): element is HTMLElement => {
+	return 'jtk' in element && 'endpoint' in (element.jtk as object);
+};
+
+export function isDateObject(date: unknown): date is Date {
+	return (
+		!!date && Object.prototype.toString.call(date) === '[object Date]' && !isNaN(date as number)
+	);
+}
+
+export function isValidNodeConnectionType(
+	connectionType: string,
+): connectionType is NodeConnectionType {
+	return nodeConnectionTypes.includes(connectionType as NodeConnectionType);
+}
+
+export function isTriggerPanelObject(
+	triggerPanel: INodeTypeDescription['triggerPanel'],
+): triggerPanel is TriggerPanelDefinition {
+	return triggerPanel !== undefined && typeof triggerPanel === 'object' && triggerPanel !== null;
+}
