@@ -1,11 +1,8 @@
-import { VNode, ComponentPublicInstance } from 'vue';
-import { PartialDeep } from 'type-fest';
-import { ExternalHooks } from '@/types/externalHooks';
+import type { VNode, ComponentPublicInstance } from 'vue';
+import type { PartialDeep } from 'type-fest';
+import type { ExternalHooks } from '@/types/externalHooks';
 
-declare module 'markdown-it-link-attributes';
-declare module 'markdown-it-emoji';
-declare module 'markdown-it-task-lists';
-declare module 'vue-agile';
+export {};
 
 declare global {
 	interface ImportMeta {
@@ -14,7 +11,6 @@ declare global {
 			PROD: boolean;
 			NODE_ENV: 'development' | 'production';
 			VUE_APP_URL_BASE_API: string;
-			VUE_APP_MAX_PINNED_DATA_SIZE: string;
 		};
 	}
 
@@ -22,6 +18,8 @@ declare global {
 		BASE_PATH: string;
 		REST_ENDPOINT: string;
 		n8nExternalHooks?: PartialDeep<ExternalHooks>;
+		preventNodeViewBeforeUnload?: boolean;
+		maxPinnedDataSize?: number;
 	}
 
 	namespace JSX {
@@ -36,10 +34,3 @@ declare global {
 		findLast(predicate: (value: T, index: number, obj: T[]) => unknown, thisArg?: any): T;
 	}
 }
-
-declare module '*.svg';
-declare module '*.png';
-declare module '*.jpg';
-declare module '*.jpeg';
-declare module '*.gif';
-declare module '*.webp';
