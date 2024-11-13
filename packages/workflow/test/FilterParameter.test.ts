@@ -1,7 +1,8 @@
-import { executeFilter } from '@/NodeParameters/FilterParameter';
-import type { FilterConditionValue, FilterValue } from '@/Interfaces';
 import merge from 'lodash/merge';
 import { DateTime } from 'luxon';
+
+import type { FilterConditionValue, FilterValue } from '@/Interfaces';
+import { arrayContainsValue, executeFilter } from '@/NodeParameters/FilterParameter';
 
 type DeepPartial<T> = {
 	[P in keyof T]?: T[P] extends object ? DeepPartial<T[P]> : T[P];
@@ -19,6 +20,7 @@ const filterFactory = (data: DeepPartial<FilterValue> = {}): FilterValue =>
 			combinator: 'and',
 			conditions: [],
 			options: {
+				version: 1,
 				leftValue: '',
 				caseSensitive: false,
 				typeValidation: 'strict',
@@ -230,6 +232,48 @@ describe('FilterParameter', () => {
 					).toThrowError(
 						"Conversion error: the string 'a string' can't be converted to a number [condition 0, item 0]",
 					);
+				});
+			});
+		});
+
+		describe('options.version', () => {
+			describe('version 1', () => {
+				it('should parse "false" as true', () => {
+					expect(
+						executeFilter(
+							filterFactory({
+								conditions: [
+									{
+										id: '1',
+										leftValue: 'false',
+										rightValue: false,
+										operator: { operation: 'equals', type: 'boolean' },
+									},
+								],
+								options: { typeValidation: 'loose', version: 1 },
+							}),
+						),
+					).toEqual(false);
+				});
+			});
+
+			describe('version 2', () => {
+				it('should parse "false" as false', () => {
+					expect(
+						executeFilter(
+							filterFactory({
+								conditions: [
+									{
+										id: '1',
+										leftValue: 'false',
+										rightValue: false,
+										operator: { operation: 'equals', type: 'boolean' },
+									},
+								],
+								options: { typeValidation: 'loose', version: 2 },
+							}),
+						),
+					).toEqual(true);
 				});
 			});
 		});
@@ -1251,6 +1295,39 @@ describe('FilterParameter', () => {
 						}),
 					);
 					expect(result).toBe(expected);
+				});
+			});
+
+			describe('arrayContainsValue', () => {
+				test('should return true if the array contains the value', () => {
+					expect(arrayContainsValue([1, 2, 3], 2, false)).toBe(true);
+				});
+
+				test('should return false if the array does not contain the value', () => {
+					expect(arrayContainsValue([1, 2, 3], 4, false)).toBe(false);
+				});
+
+				test('should return true if the array contains the string value and ignoreCase is true', () => {
+					expect(arrayContainsValue(['a', 'b', 'c'], 'A', true)).toBe(true);
+				});
+
+				test('should return false if the array contains the string value but ignoreCase is false', () => {
+					expect(arrayContainsValue(['a', 'b', 'c'], 'A', false)).toBe(false);
+				});
+
+				test('should return false if the array does not contain the string value and ignoreCase is true', () => {
+					expect(arrayContainsValue(['a', 'b', 'c'], 'd', true)).toBe(false);
+				});
+
+				test('should handle non-string values correctly when ignoreCase is true', () => {
+					expect(arrayContainsValue([1, 2, 3], 2, true)).toBe(true);
+					expect(arrayContainsValue([1, 2, 3], '2', true)).toBe(false);
+				});
+
+				test('should handle mixed types in the array correctly', () => {
+					expect(arrayContainsValue(['a', 2, 'c'], 'A', true)).toBe(true);
+					expect(arrayContainsValue(['a', 2, 'c'], 2, false)).toBe(true);
+					expect(arrayContainsValue(['a', 2, 'c'], '2', false)).toBe(false);
 				});
 			});
 		});

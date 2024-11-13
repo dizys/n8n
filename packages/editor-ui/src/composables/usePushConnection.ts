@@ -1,14 +1,7 @@
-import type {
-	IExecutionResponse,
-	IExecutionsCurrentSummaryExtended,
-	IPushData,
-	IPushDataExecutionFinished,
-} from '@/Interface';
-
-import { useNodeHelpers } from '@/composables/useNodeHelpers';
-import { useTitleChange } from '@/composables/useTitleChange';
-import { useToast } from '@/composables/useToast';
-
+import { parse } from 'flatted';
+import { h, ref } from 'vue';
+import type { useRouter } from 'vue-router';
+import { TelemetryHelpers } from 'n8n-workflow';
 import type {
 	ExpressionError,
 	IDataObject,
@@ -20,9 +13,13 @@ import type {
 	IExecuteContextData,
 	NodeOperationError,
 	INodeTypeDescription,
+	NodeError,
 } from 'n8n-workflow';
-import { TelemetryHelpers } from 'n8n-workflow';
+import type { PushMessage, PushPayload } from '@n8n/api-types';
 
+import type { IExecutionResponse, IExecutionsCurrentSummaryExtended } from '@/Interface';
+import { useNodeHelpers } from '@/composables/useNodeHelpers';
+import { useToast } from '@/composables/useToast';
 import { WORKFLOW_SETTINGS_MODAL_KEY } from '@/constants';
 import { getTriggerNodeServiceName } from '@/utils/nodeTypesUtils';
 import { codeNodeEditorEventBus, globalLinkActionsEventBus } from '@/event-bus';
@@ -31,21 +28,21 @@ import { useWorkflowsStore } from '@/stores/workflows.store';
 import { useNodeTypesStore } from '@/stores/nodeTypes.store';
 import { useCredentialsStore } from '@/stores/credentials.store';
 import { useSettingsStore } from '@/stores/settings.store';
-import { parse } from 'flatted';
-import { ref } from 'vue';
 import { useOrchestrationStore } from '@/stores/orchestration.store';
 import { usePushConnectionStore } from '@/stores/pushConnection.store';
 import { useExternalHooks } from '@/composables/useExternalHooks';
-import type { useRouter } from 'vue-router';
 import { useWorkflowHelpers } from '@/composables/useWorkflowHelpers';
 import { useI18n } from '@/composables/useI18n';
 import { useTelemetry } from '@/composables/useTelemetry';
 import type { PushMessageQueueItem } from '@/types';
+import { useAssistantStore } from '@/stores/assistant.store';
+import NodeExecutionErrorMessage from '@/components/NodeExecutionErrorMessage.vue';
+
+type IPushDataExecutionFinishedPayload = PushPayload<'executionFinished'>;
 
 export function usePushConnection({ router }: { router: ReturnType<typeof useRouter> }) {
 	const workflowHelpers = useWorkflowHelpers({ router });
 	const nodeHelpers = useNodeHelpers();
-	const titleChange = useTitleChange();
 	const toast = useToast();
 	const i18n = useI18n();
 	const telemetry = useTelemetry();
@@ -57,6 +54,7 @@ export function usePushConnection({ router }: { router: ReturnType<typeof useRou
 	const settingsStore = useSettingsStore();
 	const uiStore = useUIStore();
 	const workflowsStore = useWorkflowsStore();
+	const assistantStore = useAssistantStore();
 
 	const retryTimeout = ref<NodeJS.Timeout | null>(null);
 	const pushMessageQueue = ref<PushMessageQueueItem[]>([]);
@@ -80,7 +78,7 @@ export function usePushConnection({ router }: { router: ReturnType<typeof useRou
 	 * is currently active. So internally resend the message
 	 * a few more times
 	 */
-	function queuePushMessage(event: IPushData, retryAttempts: number) {
+	function queuePushMessage(event: PushMessage, retryAttempts: number) {
 		pushMessageQueue.value.push({ message: event, retriesLeft: retryAttempts });
 
 		if (retryTimeout.value === null) {
@@ -122,7 +120,10 @@ export function usePushConnection({ router }: { router: ReturnType<typeof useRou
 	/**
 	 * Process a newly received message
 	 */
-	async function pushMessageReceived(receivedData: IPushData, isRetry?: boolean): Promise<boolean> {
+	async function pushMessageReceived(
+		receivedData: PushMessage,
+		isRetry?: boolean,
+	): Promise<boolean> {
 		const retryAttempts = 5;
 
 		if (receivedData.type === 'sendWorkerStatusMessage') {
@@ -158,7 +159,7 @@ export function usePushConnection({ router }: { router: ReturnType<typeof useRou
 				// The data is not for the currently active execution or
 				// we do not have the execution id yet.
 				if (isRetry !== true) {
-					queuePushMessage(event as unknown as IPushData, retryAttempts);
+					queuePushMessage(event as unknown as PushMessage, retryAttempts);
 				}
 				return false;
 			}
@@ -166,7 +167,7 @@ export function usePushConnection({ router }: { router: ReturnType<typeof useRou
 
 		// recovered execution data is handled like executionFinished data, however for security reasons
 		// we need to fetch the data from the server again rather than push it to all clients
-		let recoveredPushData: IPushDataExecutionFinished | undefined = undefined;
+		let recoveredPushData: IPushDataExecutionFinishedPayload | undefined = undefined;
 		if (receivedData.type === 'executionRecovered') {
 			const recoveredExecutionId = receivedData.data?.executionId;
 			const isWorkflowRunning = uiStore.isActionActive['workflowRunning'];
@@ -239,11 +240,11 @@ export function usePushConnection({ router }: { router: ReturnType<typeof useRou
 
 		if (receivedData.type === 'executionFinished' || receivedData.type === 'executionRecovered') {
 			// The workflow finished executing
-			let pushData: IPushDataExecutionFinished;
+			let pushData: IPushDataExecutionFinishedPayload;
 			if (receivedData.type === 'executionRecovered' && recoveredPushData !== undefined) {
 				pushData = recoveredPushData;
 			} else {
-				pushData = receivedData.data as IPushDataExecutionFinished;
+				pushData = receivedData.data as IPushDataExecutionFinishedPayload;
 			}
 
 			const { activeExecutionId } = workflowsStore;
@@ -252,7 +253,7 @@ export function usePushConnection({ router }: { router: ReturnType<typeof useRou
 				if (activeRunData) {
 					for (const key of Object.keys(activeRunData)) {
 						if (
-							pushData.data.data.resultData.runData[key]?.[0]?.data?.main?.[0]?.[0]?.json
+							pushData.data?.data?.resultData?.runData?.[key]?.[0]?.data?.main?.[0]?.[0]?.json
 								?.isArtificialRecoveredEventItem === true &&
 							activeRunData[key].length > 0
 						)
@@ -271,7 +272,7 @@ export function usePushConnection({ router }: { router: ReturnType<typeof useRou
 				// The workflow which did finish execution did either not get started
 				// by this session or we do not have the execution id yet.
 				if (isRetry !== true) {
-					queuePushMessage(event as unknown as IPushData, retryAttempts);
+					queuePushMessage(event as unknown as PushMessage, retryAttempts);
 				}
 				return false;
 			}
@@ -293,7 +294,7 @@ export function usePushConnection({ router }: { router: ReturnType<typeof useRou
 
 			const lineNumber = runDataExecuted?.data?.resultData?.error?.lineNumber;
 
-			codeNodeEditorEventBus.emit('error-line-number', lineNumber || 'final');
+			codeNodeEditorEventBus.emit('highlightLine', lineNumber ?? 'final');
 
 			const workflow = workflowHelpers.getCurrentWorkflow();
 			if (runDataExecuted.waitTill !== undefined) {
@@ -305,7 +306,6 @@ export function usePushConnection({ router }: { router: ReturnType<typeof useRou
 						? saveManualExecutions
 						: workflowSettings.saveManualExecutions;
 
-				let action;
 				if (!isSavingExecutions) {
 					globalLinkActionsEventBus.emit('registerGlobalLinkAction', {
 						key: 'open-settings',
@@ -314,28 +314,16 @@ export function usePushConnection({ router }: { router: ReturnType<typeof useRou
 							uiStore.openModal(WORKFLOW_SETTINGS_MODAL_KEY);
 						},
 					});
-
-					action =
-						'<a data-action="open-settings">Turn on saving manual executions</a> and run again to see what happened after this node.';
-				} else {
-					action = `<a href="/workflow/${workflow.id}/executions/${activeExecutionId}">View the execution</a> to see what happened after this node.`;
 				}
 
 				// Workflow did start but had been put to wait
-				titleChange.titleSet(workflow.name as string, 'IDLE');
-				toast.showToast({
-					title: 'Workflow started waiting',
-					message: `${action} <a href="https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.wait/" target="_blank">More info</a>`,
-					type: 'success',
-					duration: 0,
-				});
+				workflowHelpers.setDocumentTitle(workflow.name as string, 'IDLE');
 			} else if (runDataExecuted.finished !== true) {
-				titleChange.titleSet(workflow.name as string, 'ERROR');
+				workflowHelpers.setDocumentTitle(workflow.name as string, 'ERROR');
 
 				if (
 					runDataExecuted.data.resultData.error?.name === 'ExpressionError' &&
-					(runDataExecuted.data.resultData.error as ExpressionError).context.functionality ===
-						'pairedItem'
+					(runDataExecuted.data.resultData.error as ExpressionError).functionality === 'pairedItem'
 				) {
 					const error = runDataExecuted.data.resultData.error as ExpressionError;
 
@@ -389,8 +377,9 @@ export function usePushConnection({ router }: { router: ReturnType<typeof useRou
 						duration: 0,
 					});
 				} else if (
-					runDataExecuted.data.resultData.error?.name === 'NodeOperationError' &&
-					(runDataExecuted.data.resultData.error as NodeOperationError).functionality ===
+					(runDataExecuted.data.resultData.error?.name === 'NodeOperationError' ||
+						runDataExecuted.data.resultData.error?.name === 'NodeApiError') &&
+					(runDataExecuted.data.resultData.error as NodeError).functionality ===
 						'configuration-node'
 				) {
 					// If the error is a configuration error of the node itself doesn't get executed so we can't use lastNodeExecuted for the title
@@ -404,16 +393,12 @@ export function usePushConnection({ router }: { router: ReturnType<typeof useRou
 
 					toast.showMessage({
 						title,
-						message:
-							(nodeError?.description ?? runDataExecutedErrorMessage) +
-							i18n.baseText('pushConnection.executionError.openNode', {
-								interpolate: {
-									node: nodeError.node.name,
-								},
-							}),
+						message: h(NodeExecutionErrorMessage, {
+							errorMessage: nodeError?.description ?? runDataExecutedErrorMessage,
+							nodeName: nodeError.node.name,
+						}),
 						type: 'error',
 						duration: 0,
-						dangerouslyUseHTMLString: true,
 					});
 				} else {
 					let title: string;
@@ -438,13 +423,12 @@ export function usePushConnection({ router }: { router: ReturnType<typeof useRou
 							message: runDataExecutedErrorMessage,
 							type: 'error',
 							duration: 0,
-							dangerouslyUseHTMLString: true,
 						});
 					}
 				}
 			} else {
 				// Workflow did execute without a problem
-				titleChange.titleSet(workflow.name as string, 'IDLE');
+				workflowHelpers.setDocumentTitle(workflow.name as string, 'IDLE');
 
 				const execution = workflowsStore.getWorkflowExecution;
 				if (execution?.executedNode) {
@@ -535,6 +519,7 @@ export function usePushConnection({ router }: { router: ReturnType<typeof useRou
 			const pushData = receivedData.data;
 			workflowsStore.addNodeExecutionData(pushData);
 			workflowsStore.removeExecutingNode(pushData.nodeName);
+			void assistantStore.onNodeExecution(pushData);
 		} else if (receivedData.type === 'nodeExecuteBefore') {
 			// A node started to be executed. Set it as executing.
 			const pushData = receivedData.data;

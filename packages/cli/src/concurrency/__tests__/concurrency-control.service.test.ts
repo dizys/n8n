@@ -1,24 +1,26 @@
 import { mock } from 'jest-mock-extended';
-import config from '@/config';
+import type { WorkflowExecuteMode as ExecutionMode } from 'n8n-workflow';
+
 import {
 	CLOUD_TEMP_PRODUCTION_LIMIT,
 	CLOUD_TEMP_REPORTABLE_THRESHOLDS,
 	ConcurrencyControlService,
 } from '@/concurrency/concurrency-control.service';
-import type { Logger } from '@/Logger';
-import { InvalidConcurrencyLimitError } from '@/errors/invalid-concurrency-limit.error';
-import { ConcurrencyQueue } from '../concurrency-queue';
-import type { WorkflowExecuteMode as ExecutionMode } from 'n8n-workflow';
+import config from '@/config';
 import type { ExecutionRepository } from '@/databases/repositories/execution.repository';
-import type { IExecutingWorkflowData } from '@/Interfaces';
+import { InvalidConcurrencyLimitError } from '@/errors/invalid-concurrency-limit.error';
+import type { EventService } from '@/events/event.service';
+import type { IExecutingWorkflowData } from '@/interfaces';
 import type { Telemetry } from '@/telemetry';
-import type { EventRelay } from '@/eventbus/event-relay.service';
+import { mockLogger } from '@test/mocking';
+
+import { ConcurrencyQueue } from '../concurrency-queue';
 
 describe('ConcurrencyControlService', () => {
-	const logger = mock<Logger>();
+	const logger = mockLogger();
 	const executionRepository = mock<ExecutionRepository>();
 	const telemetry = mock<Telemetry>();
-	const eventRelay = mock<EventRelay>();
+	const eventService = mock<EventService>();
 
 	afterEach(() => {
 		config.set('executions.concurrency.productionLimit', -1);
@@ -41,7 +43,7 @@ describe('ConcurrencyControlService', () => {
 				logger,
 				executionRepository,
 				telemetry,
-				eventRelay,
+				eventService,
 			);
 
 			/**
@@ -63,7 +65,7 @@ describe('ConcurrencyControlService', () => {
 				/**
 				 * Act
 				 */
-				new ConcurrencyControlService(logger, executionRepository, telemetry, eventRelay);
+				new ConcurrencyControlService(logger, executionRepository, telemetry, eventService);
 			} catch (error) {
 				/**
 				 * Assert
@@ -85,7 +87,7 @@ describe('ConcurrencyControlService', () => {
 				logger,
 				executionRepository,
 				telemetry,
-				eventRelay,
+				eventService,
 			);
 
 			/**
@@ -108,7 +110,7 @@ describe('ConcurrencyControlService', () => {
 				logger,
 				executionRepository,
 				telemetry,
-				eventRelay,
+				eventService,
 			);
 
 			/**
@@ -132,7 +134,7 @@ describe('ConcurrencyControlService', () => {
 				logger,
 				executionRepository,
 				telemetry,
-				eventRelay,
+				eventService,
 			);
 
 			/**
@@ -161,7 +163,7 @@ describe('ConcurrencyControlService', () => {
 						logger,
 						executionRepository,
 						telemetry,
-						eventRelay,
+						eventService,
 					);
 					const enqueueSpy = jest.spyOn(ConcurrencyQueue.prototype, 'enqueue');
 
@@ -187,7 +189,7 @@ describe('ConcurrencyControlService', () => {
 					logger,
 					executionRepository,
 					telemetry,
-					eventRelay,
+					eventService,
 				);
 				const enqueueSpy = jest.spyOn(ConcurrencyQueue.prototype, 'enqueue');
 
@@ -216,7 +218,7 @@ describe('ConcurrencyControlService', () => {
 						logger,
 						executionRepository,
 						telemetry,
-						eventRelay,
+						eventService,
 					);
 					const dequeueSpy = jest.spyOn(ConcurrencyQueue.prototype, 'dequeue');
 
@@ -242,7 +244,7 @@ describe('ConcurrencyControlService', () => {
 					logger,
 					executionRepository,
 					telemetry,
-					eventRelay,
+					eventService,
 				);
 				const dequeueSpy = jest.spyOn(ConcurrencyQueue.prototype, 'dequeue');
 
@@ -271,7 +273,7 @@ describe('ConcurrencyControlService', () => {
 						logger,
 						executionRepository,
 						telemetry,
-						eventRelay,
+						eventService,
 					);
 					const removeSpy = jest.spyOn(ConcurrencyQueue.prototype, 'remove');
 
@@ -299,7 +301,7 @@ describe('ConcurrencyControlService', () => {
 						logger,
 						executionRepository,
 						telemetry,
-						eventRelay,
+						eventService,
 					);
 					const removeSpy = jest.spyOn(ConcurrencyQueue.prototype, 'remove');
 
@@ -327,7 +329,7 @@ describe('ConcurrencyControlService', () => {
 					logger,
 					executionRepository,
 					telemetry,
-					eventRelay,
+					eventService,
 				);
 
 				jest
@@ -371,7 +373,7 @@ describe('ConcurrencyControlService', () => {
 					logger,
 					executionRepository,
 					telemetry,
-					eventRelay,
+					eventService,
 				);
 				const enqueueSpy = jest.spyOn(ConcurrencyQueue.prototype, 'enqueue');
 
@@ -399,7 +401,7 @@ describe('ConcurrencyControlService', () => {
 					logger,
 					executionRepository,
 					telemetry,
-					eventRelay,
+					eventService,
 				);
 				const dequeueSpy = jest.spyOn(ConcurrencyQueue.prototype, 'dequeue');
 
@@ -426,7 +428,7 @@ describe('ConcurrencyControlService', () => {
 					logger,
 					executionRepository,
 					telemetry,
-					eventRelay,
+					eventService,
 				);
 				const removeSpy = jest.spyOn(ConcurrencyQueue.prototype, 'remove');
 
@@ -461,7 +463,7 @@ describe('ConcurrencyControlService', () => {
 						logger,
 						executionRepository,
 						telemetry,
-						eventRelay,
+						eventService,
 					);
 
 					/**
@@ -491,7 +493,7 @@ describe('ConcurrencyControlService', () => {
 						logger,
 						executionRepository,
 						telemetry,
-						eventRelay,
+						eventService,
 					);
 
 					/**
@@ -523,7 +525,7 @@ describe('ConcurrencyControlService', () => {
 						logger,
 						executionRepository,
 						telemetry,
-						eventRelay,
+						eventService,
 					);
 
 					/**

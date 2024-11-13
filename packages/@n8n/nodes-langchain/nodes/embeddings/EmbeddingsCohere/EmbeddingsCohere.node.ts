@@ -1,9 +1,9 @@
 /* eslint-disable n8n-nodes-base/node-dirname-against-convention */
 import {
 	NodeConnectionType,
-	type IExecuteFunctions,
 	type INodeType,
 	type INodeTypeDescription,
+	type ISupplyDataFunctions,
 	type SupplyData,
 } from 'n8n-workflow';
 import { CohereEmbeddings } from '@langchain/cohere';
@@ -14,7 +14,7 @@ export class EmbeddingsCohere implements INodeType {
 	description: INodeTypeDescription = {
 		displayName: 'Embeddings Cohere',
 		name: 'embeddingsCohere',
-		icon: 'file:cohere.svg',
+		icon: { light: 'file:cohere.svg', dark: 'file:cohere.dark.svg' },
 		group: ['transform'],
 		version: 1,
 		description: 'Use Cohere Embeddings',
@@ -99,10 +99,10 @@ export class EmbeddingsCohere implements INodeType {
 		],
 	};
 
-	async supplyData(this: IExecuteFunctions, itemIndex: number): Promise<SupplyData> {
-		this.logger.verbose('Supply data for embeddings Cohere');
+	async supplyData(this: ISupplyDataFunctions, itemIndex: number): Promise<SupplyData> {
+		this.logger.debug('Supply data for embeddings Cohere');
 		const modelName = this.getNodeParameter('modelName', itemIndex, 'embed-english-v2.0') as string;
-		const credentials = (await this.getCredentials('cohereApi')) as { apiKey: string };
+		const credentials = await this.getCredentials<{ apiKey: string }>('cohereApi');
 		const embeddings = new CohereEmbeddings({
 			apiKey: credentials.apiKey,
 			model: modelName,

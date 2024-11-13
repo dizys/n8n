@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, watch, onBeforeMount, onMounted } from 'vue';
+import { ref, computed, watch, onBeforeMount, onBeforeUnmount, onMounted } from 'vue';
 import type { RouteLocation, RouteLocationRaw } from 'vue-router';
 import { useRouter, useRoute } from 'vue-router';
 import WorkflowDetails from '@/components/MainHeader/WorkflowDetails.vue';
@@ -17,6 +17,8 @@ import { useUIStore } from '@/stores/ui.store';
 import { useWorkflowsStore } from '@/stores/workflows.store';
 import { useExecutionsStore } from '@/stores/executions.store';
 import { usePushConnection } from '@/composables/usePushConnection';
+
+import GithubButton from 'vue-github-button';
 
 const router = useRouter();
 const route = useRoute();
@@ -55,6 +57,10 @@ watch(route, (to, from) => {
 
 onBeforeMount(() => {
 	pushConnection.initialize();
+});
+
+onBeforeUnmount(() => {
+	pushConnection.terminate();
 });
 
 onMounted(async () => {
@@ -157,22 +163,48 @@ async function navigateToExecutionsView(openInNewTab: boolean) {
 </script>
 
 <template>
-	<div>
+	<div class="container">
 		<div :class="{ 'main-header': true, expanded: !uiStore.sidebarMenuCollapsed }">
 			<div v-show="!hideMenuBar" class="top-menu">
-				<WorkflowDetails v-if="workflow?.name" :workflow="workflow" :read-only="readOnly" />
-				<TabBar
-					v-if="onWorkflowPage"
-					:items="tabBarItems"
-					:model-value="activeHeaderTab"
-					@update:model-value="onTabSelected"
+				<WorkflowDetails
+					v-if="workflow?.name"
+					:id="workflow.id"
+					:tags="workflow.tags"
+					:name="workflow.name"
+					:meta="workflow.meta"
+					:scopes="workflow.scopes"
+					:active="workflow.active"
+					:read-only="readOnly"
 				/>
 			</div>
+			<TabBar
+				v-if="onWorkflowPage"
+				:items="tabBarItems"
+				:model-value="activeHeaderTab"
+				@update:model-value="onTabSelected"
+			/>
+		</div>
+		<div class="github-button">
+			<GithubButton
+				href="https://github.com/n8n-io/n8n"
+				:data-color-scheme="uiStore.appliedTheme"
+				data-size="large"
+				data-show-count="true"
+				aria-label="Star n8n-io/n8n on GitHub"
+				>Star</GithubButton
+			>
 		</div>
 	</div>
 </template>
 
 <style lang="scss">
+.container {
+	display: flex;
+	position: relative;
+	width: 100%;
+	align-items: center;
+}
+
 .main-header {
 	background-color: var(--color-background-xlight);
 	height: $header-height;
@@ -188,6 +220,18 @@ async function navigateToExecutionsView(openInNewTab: boolean) {
 	font-size: 0.9em;
 	height: $header-height;
 	font-weight: 400;
-	padding: 0 var(--spacing-m) 0 var(--spacing-xs);
+	padding: 0 var(--spacing-m) 0 var(--spacing-m);
+}
+
+.github-button {
+	display: flex;
+	position: relative;
+	align-items: center;
+	height: $header-height;
+	padding-left: var(--spacing-m);
+	padding-right: var(--spacing-m);
+	background-color: var(--color-background-xlight);
+	border-bottom: var(--border-width-base) var(--border-style-base) var(--color-foreground-base);
+	border-left: var(--border-width-base) var(--border-style-base) var(--color-foreground-base);
 }
 </style>

@@ -1,3 +1,8 @@
+import * as setupCredsModal from '../composables/modals/workflow-credential-setup-modal';
+import * as formStep from '../composables/setup-template-form-step';
+import { getSetupWorkflowCredentialsButton } from '../composables/setup-workflow-credentials-button';
+import TestTemplate1 from '../fixtures/Test_Template_1.json';
+import TestTemplate2 from '../fixtures/Test_Template_2.json';
 import {
 	clickUseWorkflowButtonByTitle,
 	visitTemplateCollectionPage,
@@ -5,11 +10,6 @@ import {
 } from '../pages/template-collection';
 import * as templateCredentialsSetupPage from '../pages/template-credential-setup';
 import { WorkflowPage } from '../pages/workflow';
-import * as formStep from '../composables/setup-template-form-step';
-import { getSetupWorkflowCredentialsButton } from '../composables/setup-workflow-credentials-button';
-import * as setupCredsModal from '../composables/modals/workflow-credential-setup-modal';
-import TestTemplate1 from '../fixtures/Test_Template_1.json';
-import TestTemplate2 from '../fixtures/Test_Template_2.json';
 
 const workflowPage = new WorkflowPage();
 
@@ -182,6 +182,7 @@ describe('Template credentials setup', () => {
 		});
 
 		it('should fill credentials from workflow editor', () => {
+			cy.viewport(1920, 1080);
 			templateCredentialsSetupPage.visitTemplateCredentialSetupPage(testTemplate.id);
 			templateCredentialsSetupPage.getters.skipLink().click();
 

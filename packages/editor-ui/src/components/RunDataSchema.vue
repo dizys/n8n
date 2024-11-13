@@ -7,11 +7,11 @@ import NodeIcon from '@/components/NodeIcon.vue';
 import Draggable from '@/components/Draggable.vue';
 import { useNDVStore } from '@/stores/ndv.store';
 import { telemetry } from '@/plugins/telemetry';
-import type {
-	ConnectionTypes,
-	IConnectedNode,
-	IDataObject,
-	INodeTypeDescription,
+import {
+	NodeConnectionType,
+	type IConnectedNode,
+	type IDataObject,
+	type INodeTypeDescription,
 } from 'n8n-workflow';
 import { useExternalHooks } from '@/composables/useExternalHooks';
 import { i18n } from '@/plugins/i18n';
@@ -27,13 +27,14 @@ type Props = {
 	nodes?: IConnectedNode[];
 	node?: INodeUi | null;
 	data?: IDataObject[];
-	mappingEnabled: boolean;
-	runIndex: number;
-	outputIndex: number;
-	totalRuns: number;
+	mappingEnabled?: boolean;
+	runIndex?: number;
+	outputIndex?: number;
+	totalRuns?: number;
 	paneType: 'input' | 'output';
-	connectionType: ConnectionTypes;
-	search: string;
+	connectionType?: NodeConnectionType;
+	search?: string;
+	context?: 'ndv' | 'modal';
 };
 
 type SchemaNode = {
@@ -42,6 +43,7 @@ type SchemaNode = {
 	depth: number;
 	loading: boolean;
 	open: boolean;
+	connectedOutputIndexes: number[];
 	itemsCount: number | null;
 	schema: Schema | null;
 };
@@ -51,6 +53,13 @@ const props = withDefaults(defineProps<Props>(), {
 	distanceFromActive: 1,
 	node: null,
 	data: undefined,
+	runIndex: 0,
+	outputIndex: 0,
+	totalRuns: 1,
+	connectionType: NodeConnectionType.Main,
+	search: '',
+	mappingEnabled: false,
+	context: 'ndv',
 });
 
 const draggingPath = ref<string>('');
@@ -88,6 +97,7 @@ const nodes = computed(() => {
 
 			return {
 				node: fullNode,
+				connectedOutputIndexes: node.indicies.length > 0 ? node.indicies : [0],
 				depth: node.depth,
 				itemsCount,
 				nodeType,
@@ -103,6 +113,24 @@ const filteredNodes = computed(() =>
 	nodes.value.filter((node) => !props.search || !isDataEmpty(node.schema)),
 );
 
+const nodeAdditionalInfo = (node: INodeUi) => {
+	const returnData: string[] = [];
+	if (node.disabled) {
+		returnData.push(i18n.baseText('node.disabled'));
+	}
+
+	const connections = ndvStore.ndvNodeInputNumber[node.name];
+	if (connections) {
+		if (connections.length === 1) {
+			returnData.push(`Input ${connections}`);
+		} else {
+			returnData.push(`Inputs ${connections.join(', ')}`);
+		}
+	}
+
+	return returnData.length ? `(${returnData.join(' | ')})` : '';
+};
+
 const isDataEmpty = (schema: Schema | null) => {
 	if (!schema) return true;
 	// Utilize the generated schema instead of looping over the entire data again
@@ -117,11 +145,17 @@ const highlight = computed(() => ndvStore.highlightDraggables);
 const allNodesOpen = computed(() => nodes.value.every((node) => node.open));
 const noNodesOpen = computed(() => nodes.value.every((node) => !node.open));
 
-const loadNodeData = async (node: INodeUi) => {
+const loadNodeData = async ({ node, connectedOutputIndexes }: SchemaNode) => {
 	const pinData = workflowsStore.pinDataByNodeName(node.name);
 	const data =
 		pinData ??
-		executionDataToJson(getNodeInputData(node, 0, 0, props.paneType, props.connectionType) ?? []);
+		connectedOutputIndexes
+			.map((outputIndex) =>
+				executionDataToJson(
+					getNodeInputData(node, props.runIndex, outputIndex, props.paneType, props.connectionType),
+				),
+			)
+			.flat();
 
 	nodesData.value[node.name] = {
 		schema: getSchemaForExecutionData(data),
@@ -129,7 +163,8 @@ const loadNodeData = async (node: INodeUi) => {
 	};
 };
 
-const toggleOpenNode = async ({ node, schema, open }: SchemaNode, exclusive = false) => {
+const toggleOpenNode = async (schemaNode: SchemaNode, exclusive = false) => {
+	const { node, schema, open } = schemaNode;
 	disableScrollInView.value = false;
 	if (open) {
 		nodesOpen.value[node.name] = false;
@@ -138,7 +173,7 @@ const toggleOpenNode = async ({ node, schema, open }: SchemaNode, exclusive = fa
 
 	if (!schema) {
 		nodesLoading.value[node.name] = true;
-		await loadNodeData(node);
+		await loadNodeData(schemaNode);
 		nodesLoading.value[node.name] = false;
 	}
 
@@ -150,8 +185,8 @@ const toggleOpenNode = async ({ node, schema, open }: SchemaNode, exclusive = fa
 };
 
 const openAllNodes = async () => {
-	const nodesToLoad = nodes.value.filter((node) => !node.schema).map(({ node }) => node);
-	await Promise.all(nodesToLoad.map(async (node) => await loadNodeData(node)));
+	const nodesToLoad = nodes.value.filter((node) => !node.schema);
+	await Promise.all(nodesToLoad.map(loadNodeData));
 	nodesOpen.value = Object.fromEntries(nodes.value.map(({ node }) => [node.name, true]));
 };
 
@@ -231,7 +266,10 @@ watch(
 </script>
 
 <template>
-	<div v-if="paneType === 'input'" :class="[$style.schemaWrapper, { highlightSchema: highlight }]">
+	<div
+		v-if="paneType === 'input' && nodes.length > 0"
+		:class="[$style.schemaWrapper, { highlightSchema: highlight }]"
+	>
 		<div v-if="search && nodes.length > 0 && filteredNodes.length === 0" :class="$style.noMatch">
 			<n8n-text tag="h3" size="large">{{
 				$locale.baseText('ndv.search.noNodeMatch.title')
@@ -277,6 +315,9 @@ watch(
 
 					<div :class="$style.title">
 						{{ currentNode.node.name }}
+						<span v-if="nodeAdditionalInfo(currentNode.node)" :class="$style.subtitle">{{
+							nodeAdditionalInfo(currentNode.node)
+						}}</span>
 					</div>
 					<font-awesome-icon
 						v-if="currentNode.nodeType.group.includes('trigger')"
@@ -321,8 +362,16 @@ watch(
 					>
 						<div :class="$style.innerSchema" @transitionstart.stop>
 							<div
-								v-if="isDataEmpty(currentNode.schema)"
-								:class="$style.empty"
+								v-if="currentNode.node.disabled"
+								:class="$style.notice"
+								data-test-id="run-data-schema-disabled"
+							>
+								{{ i18n.baseText('dataMapping.schemaView.disabled') }}
+							</div>
+
+							<div
+								v-else-if="isDataEmpty(currentNode.schema)"
+								:class="$style.notice"
 								data-test-id="run-data-schema-empty"
 							>
 								{{ i18n.baseText('dataMapping.schemaView.emptyData') }}
@@ -334,7 +383,7 @@ watch(
 								:level="0"
 								:parent="null"
 								:pane-type="paneType"
-								:sub-key="snakeCase(currentNode.node.name)"
+								:sub-key="`${props.context}_${snakeCase(currentNode.node.name)}`"
 								:mapping-enabled="mappingEnabled"
 								:dragging-path="draggingPath"
 								:distance-from-active="currentNode.depth"
@@ -362,6 +411,7 @@ watch(
 					</template>
 				</i18n-t>
 			</n8n-text>
+			<n8n-text>{{ $locale.baseText('ndv.search.noMatchSchema.description') }}</n8n-text>
 		</div>
 
 		<div v-else :class="$style.schema" data-test-id="run-data-schema-node-schema">
@@ -379,7 +429,7 @@ watch(
 				:level="0"
 				:parent="null"
 				:pane-type="paneType"
-				:sub-key="`output_${nodeSchema.type}-0-0`"
+				:sub-key="`${props.context}_output_${nodeSchema.type}-0-0`"
 				:mapping-enabled="mappingEnabled"
 				:dragging-path="draggingPath"
 				:node="node"
@@ -397,9 +447,7 @@ watch(
 	--title-spacing-left: 38px;
 	display: flex;
 	flex-direction: column;
-	padding: 0 0 var(--spacing-s) var(--spacing-s);
 	container: schema / inline-size;
-	min-height: 100%;
 
 	&.animating {
 		overflow: hidden;
@@ -413,14 +461,13 @@ watch(
 		scroll-margin-top: var(--header-height);
 	}
 
-	.empty {
+	.notice {
 		padding-left: var(--spacing-l);
 	}
 }
 
 .schema {
 	display: grid;
-	padding-right: var(--spacing-s);
 	grid-template-rows: 1fr;
 
 	&.animated {
@@ -435,13 +482,14 @@ watch(
 	}
 }
 
-.empty {
+.notice {
 	font-size: var(--font-size-2xs);
 	color: var(--color-text-light);
 }
 
 .innerSchema {
 	min-height: 0;
+	min-width: 0;
 
 	> div {
 		margin-bottom: var(--spacing-xs);
@@ -456,6 +504,13 @@ watch(
 	cursor: pointer;
 }
 
+.subtitle {
+	margin-left: auto;
+	padding-left: var(--spacing-2xs);
+	color: var(--color-text-light);
+	font-weight: var(--font-weight-regular);
+}
+
 .header {
 	display: flex;
 	align-items: center;
@@ -463,7 +518,6 @@ watch(
 	top: 0;
 	z-index: 1;
 	padding-bottom: var(--spacing-2xs);
-	padding-right: var(--spacing-s);
 	background: var(--color-run-data-background);
 }
 
